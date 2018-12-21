@@ -206,7 +206,7 @@
         hide_create_volume: false,
         vol_create: false,
         // May be null
-        vol_device_name: 'vda',
+        vol_device_name: null,
         vol_delete_on_instance_delete: false,
         vol_size: 1
       };
@@ -729,21 +729,44 @@
       finalSpec.source_id = finalSpec.source && finalSpec.source[0] && finalSpec.source[0].id;
       delete finalSpec.source;
 
+      var vol_create = false;
+      var vol_size = null;
+
       switch (finalSpec.source_type.type) {
         case bootSourceTypes.IMAGE:
-          setFinalSpecBootImageToVolume(finalSpec);
-          break;
         case bootSourceTypes.INSTANCE_SNAPSHOT:
-          setFinalSpecBootImageToVolume(finalSpec);
+          vol_create = finalSpec.vol_create;
+          vol_size = finalSpec.vol_size;
           break;
         case bootSourceTypes.VOLUME:
-          setFinalSpecBootFromVolumeDevice(finalSpec, 'vol');
-          break;
         case bootSourceTypes.VOLUME_SNAPSHOT:
-          setFinalSpecBootFromVolumeDevice(finalSpec, 'snap');
+          vol_create = true;
           break;
         default:
           $log.error("Unknown source type: " + finalSpec.source_type);
+      }
+
+      if (vol_create) {
+        var block_device_mapping = {
+          'source_type': finalSpec.source_type.type,
+          'destination_type': bootSourceTypes.VOLUME,
+          'delete_on_termination': finalSpec.vol_delete_on_instance_delete,
+          'uuid': finalSpec.source_id,
+          'boot_index': '0',
+        }
+
+        if (vol_size != null) {
+          block_device_mapping['volume_size'] = finalSpec.vol_size
+        }
+
+        if (finalSpec.vol_device_name != null) {
+          block_device_mapping['device_name'] = finalSpec.vol_device_name;
+        }
+
+        finalSpec.block_device_mapping_v2 = [];
+        finalSpec.block_device_mapping_v2.push(block_device_mapping);
+
+        finalSpec.source_id = null;
       }
 
       // The following are all fields gathered into simple fields by
@@ -755,40 +778,6 @@
       delete finalSpec.vol_device_name;
       delete finalSpec.vol_delete_on_instance_delete;
       delete finalSpec.vol_size;
-    }
-
-    function setFinalSpecBootImageToVolume(finalSpec) {
-      if (finalSpec.vol_create) {
-        // Specify null to get Autoselection (not empty string)
-        var deviceName = finalSpec.vol_device_name ? finalSpec.vol_device_name : null;
-        finalSpec.block_device_mapping_v2 = [];
-        finalSpec.block_device_mapping_v2.push(
-          {
-            'device_name': deviceName,
-            'source_type': bootSourceTypes.IMAGE,
-            'destination_type': bootSourceTypes.VOLUME,
-            'delete_on_termination': finalSpec.vol_delete_on_instance_delete,
-            'uuid': finalSpec.source_id,
-            'boot_index': '0',
-            'volume_size': finalSpec.vol_size
-          }
-        );
-        finalSpec.source_id = null;
-      }
-    }
-
-    function setFinalSpecBootFromVolumeDevice(finalSpec, sourceType) {
-      finalSpec.block_device_mapping = {};
-      finalSpec.block_device_mapping[finalSpec.vol_device_name] = [
-        finalSpec.source_id,
-        ':',
-        sourceType,
-        '::',
-        finalSpec.vol_delete_on_instance_delete
-      ].join('');
-
-      // Source ID must be empty for API
-      finalSpec.source_id = '';
     }
 
     // Cinder Limits
